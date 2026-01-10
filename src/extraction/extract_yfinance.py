@@ -26,17 +26,38 @@ def extract(start_date, end_date, output_dir="data/raw"):
 
         # 2. Reseta o Index para ter a coluna 'Date' para particionar
         df_full.reset_index(inplace=True)
+
+        df_full['ticker'] = t
+
+        new_columns = []
+        for col in df_full.columns:
+
+            if isinstance(col, tuple):
+
+                # Pega o primeiro item ('Close'), ignora o ticker, e joga para minúsculo
+                clean_col = col[0].lower().strip()
+
+                # Correção específica para caso o reset_index tenha gerado ('Date', '')
+                if clean_col == 'date': 
+                    clean_col = 'date'
+
+                new_columns.append(clean_col)
+            else:
+                new_columns.append(str(col).lower().strip())
+        
+        df_full.columns = new_columns
+
+        if 'date' in df_full.columns:
+            df_full['date'] = df_full['date'].astype('datetime64[us]')        
         
         # 3. Itera sobre CADA DIA presente no DataFrame
         #    Agrupa o DataFrame completo pela coluna 'Date'
-        for date, df_day in df_full.groupby('Date'):
+        for date, df_day in df_full.groupby('date'):
             
             # Converte a data (Timestamp) para string no formato YYYY-MM-DD
             date_str = date.strftime('%Y-%m-%d')
             
-            # Constrói o caminho de partição, simulando o S3:
-            # {output_dir}/ticker=PETR4/date=2025-12-05/file.parquet
-            
+           
             # Estrutura completa: data/raw/ticker=PETR4/date=2025-12-05/
             partition_path = base_output_dir / f"ticker={t}" / f"date={date_str}"
             
@@ -46,9 +67,19 @@ def extract(start_date, end_date, output_dir="data/raw"):
             # Define o nome do arquivo final
             output_file_name = f"{t}_{date_str}.parquet"
             output_path = partition_path / output_file_name
+
+            df_final = df_day.copy()
+
+            if 'date' in df_final.columns:
+                df_final.rename(columns={'date': 'data_pregao'}, inplace=True)
+
+            if 'data_pregao' in df_final.columns:
+                df_final['data_pregao'] = df_final['data_pregao'].astype(str)
             
             # Salva o DataFrame que contém APENAS os dados daquele dia
-            df_day.to_parquet(output_path, index=False)
+            df_final.to_parquet(output_path, allow_truncated_timestamps=True, 
+                              coerce_timestamps='us',
+                              index=False)
 
             print(f"-> Salvo: {output_path}")
 
